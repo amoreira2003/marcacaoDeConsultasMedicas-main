@@ -53,6 +53,15 @@ const getStatusText = (status: string) => {
   }
 };
 
+// Utilitário simples para mostrar iniciais quando não há foto
+const getInitials = (name?: string) => {
+  if (!name) return '??';
+  const parts = name.trim().split(' ').filter(Boolean);
+  const first = parts[0]?.[0] || '';
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return (first + last).toUpperCase();
+};
+
 const PatientDashboardScreen: React.FC = () => {
   const { user, signOut } = useAuth();
   const navigation = useNavigation<PatientDashboardScreenProps['navigation']>();
@@ -68,9 +77,12 @@ const PatientDashboardScreen: React.FC = () => {
           (appointment) => appointment.patientId === user?.id
         );
         setAppointments(userAppointments);
+      } else {
+        setAppointments([]);
       }
     } catch (error) {
       console.error('Erro ao carregar consultas:', error);
+      setAppointments([]);
     } finally {
       setLoading(false);
     }
@@ -80,12 +92,39 @@ const PatientDashboardScreen: React.FC = () => {
   useFocusEffect(
     React.useCallback(() => {
       loadAppointments();
-    }, [])
+    }, [user?.id])
   );
+
+  const initials = getInitials(user?.name);
 
   return (
     <Container>
+      {/* Seu Header global (mantido) */}
       <Header />
+
+      {/* Cabeçalho da conta com avatar que consome user.image */}
+      <AccountHeader onPress={() => navigation.navigate('Profile')}>
+        <AvatarWrapper>
+          {user?.image ? (
+            <AvatarImage source={{ uri: user.image }} resizeMode="cover" />
+          ) : (
+            <AvatarFallback>
+              <AvatarInitials>{initials}</AvatarInitials>
+            </AvatarFallback>
+          )}
+        </AvatarWrapper>
+
+        <AccountInfo>
+          <WelcomeText>Olá,</WelcomeText>
+          <AccountName numberOfLines={1}>{user?.name || 'Paciente'}</AccountName>
+          {!!user?.email && <AccountEmail numberOfLines={1}>{user.email}</AccountEmail>}
+        </AccountInfo>
+
+        <ProfileCTA>
+          <ProfileCTAText>Ver perfil</ProfileCTAText>
+        </ProfileCTA>
+      </AccountHeader>
+
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Title>Minhas Consultas</Title>
 
@@ -187,6 +226,81 @@ const Container = styled.View`
   background-color: ${theme.colors.background};
 `;
 
+/* ====== Cabeçalho de Conta (consome user.image) ====== */
+const AccountHeader = styled.Pressable`
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom-width: 1px;
+  border-bottom-color: ${theme.colors.border};
+  background-color: ${theme.colors.background};
+`;
+
+const AvatarWrapper = styled.View`
+  width: 56px;
+  height: 56px;
+  border-radius: 28px;
+  overflow: hidden;
+  background-color: ${theme.colors.border};
+`;
+
+const AvatarImage = styled.Image`
+  width: 100%;
+  height: 100%;
+`;
+
+const AvatarFallback = styled.View`
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  background-color: ${theme.colors.border};
+`;
+
+const AvatarInitials = styled.Text`
+  font-size: 18px;
+  font-weight: 800;
+  color: ${theme.colors.text};
+  opacity: 0.8;
+`;
+
+const AccountInfo = styled.View`
+  flex: 1;
+  min-width: 0px;
+`;
+
+const WelcomeText = styled.Text`
+  font-size: 12px;
+  color: ${theme.colors.text};
+  opacity: 0.6;
+`;
+
+const AccountName = styled.Text`
+  font-size: 16px;
+  font-weight: 800;
+  color: ${theme.colors.text};
+`;
+
+const AccountEmail = styled.Text`
+  font-size: 12px;
+  color: ${theme.colors.text};
+  opacity: 0.7;
+`;
+
+const ProfileCTA = styled.View`
+  padding: 6px 8px;
+  border-radius: 8px;
+  border-width: 1px;
+  border-color: ${theme.colors.border};
+`;
+
+const ProfileCTAText = styled.Text`
+  font-size: 12px;
+  font-weight: 700;
+  color: ${theme.colors.text};
+`;
+
+/* ====== Resto da tela ====== */
 const Title = styled.Text`
   font-size: 24px;
   font-weight: bold;
@@ -232,4 +346,4 @@ const StatusText = styled.Text<StyledProps>`
   font-weight: 500;
 `;
 
-export default PatientDashboardScreen; 
+export default PatientDashboardScreen;

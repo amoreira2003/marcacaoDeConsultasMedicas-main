@@ -1,14 +1,15 @@
+// src/hooks/useAuth.ts
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authApiService } from '../services/authApi';
-import { apiClient } from '../services/api';
-import { User, LoginCredentials, RegisterData, AuthContextData } from '../types/auth';
-
-// Chaves de armazenamento
-const STORAGE_KEYS = {
-  USER: '@MedicalApp:user',
-  TOKEN: '@MedicalApp:token',
-};
+import api from '../services/api'; // seu cliente axios configurado
+import {
+  AuthContextData,
+  User,
+  LoginCredentials,
+  RegisterData,
+  AuthResponse,
+} from '../types/auth';
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
@@ -17,86 +18,88 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadStoredUser();
-  }, []);
+    // Carrega o usuário salvo no AsyncStorage ao inicializar
+    const loadStorageData = async () => {
+      const storedUser = await AsyncStorage.getItem('@app:user');
+      const storedToken = await AsyncStorage.getItem('@app:token');
 
-  const loadStoredUser = async () => {
-    try {
-      // Carrega o token salvo
-      const storedToken = await AsyncStorage.getItem(STORAGE_KEYS.TOKEN);
-      const storedUser = await AsyncStorage.getItem(STORAGE_KEYS.USER);
-      
-      if (storedToken && storedUser) {
-        // Configura o token no cliente da API
-        apiClient.setToken(storedToken);
+      if (storedUser && storedToken) {
+        api.defaults.headers.Authorization = `Bearer ${storedToken}`;
         setUser(JSON.parse(storedUser));
       }
+
+      setLoading(false);
+    };
+
+    loadStorageData();
+  }, []);
+
+  const signIn = async (credentials: LoginCredentials) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post<AuthResponse>('/auth/login', credentials);
+
+      // Exemplo: API retorna algo como { user: {...}, token: '...', userPic: 'https://...' }
+      const userWithPic = {
+        ...data.user,
+        image: data.user.image || data.userPic || '', // garante fallback do campo da API
+      };
+
+      await AsyncStorage.setItem('@app:user', JSON.stringify(userWithPic));
+      await AsyncStorage.setItem('@app:token', data.token);
+
+      api.defaults.headers.Authorization = `Bearer ${data.token}`;
+      setUser(userWithPic);
     } catch (error) {
-      console.error('Erro ao carregar usuário:', error);
-      // Se houver erro, limpa os dados armazenados
-      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
-      await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
+      console.error('Erro no login:', error);
+      throw error;
     } finally {
       setLoading(false);
     }
   };
 
-  const signIn = async (credentials: LoginCredentials) => {
-    try {
-      const response = await authApiService.signIn(credentials);
-      setUser(response.user);
-      
-      // Configura o token no cliente da API
-      apiClient.setToken(response.token);
-      
-      // Salva os dados no AsyncStorage para persistência
-      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
-      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, response.token);
-    } catch (error) {
-      throw error;
-    }
-  };
-
   const register = async (data: RegisterData) => {
+    setLoading(true);
     try {
-      const response = await authApiService.register(data);
-      setUser(response.user);
-      
-      // Configura o token no cliente da API
-      apiClient.setToken(response.token);
-      
-      // Salva os dados no AsyncStorage para persistência
-      await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(response.user));
-      await AsyncStorage.setItem(STORAGE_KEYS.TOKEN, response.token);
+      const response = await api.post<AuthResponse>('/auth/register', data);
+      const userWithPic = {
+        ...response.data.user,
+        image: response.data.user.image || response.data.userPic || '',
+      };
+
+      await AsyncStorage.setItem('@app:user', JSON.stringify(userWithPic));
+      await AsyncStorage.setItem('@app:token', response.data.token);
+
+      api.defaults.headers.Authorization = `Bearer ${response.data.token}`;
+      setUser(userWithPic);
     } catch (error) {
+      console.error('Erro no registro:', error);
       throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   const signOut = async () => {
-    try {
-      await authApiService.signOut();
-      setUser(null);
-      
-      // Remove os dados do AsyncStorage
-      await AsyncStorage.removeItem(STORAGE_KEYS.USER);
-      await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
-    } catch (error) {
-      console.error('Erro ao fazer logout:', error);
-    }
+    await AsyncStorage.multiRemove(['@app:user', '@app:token']);
+    setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, register, signOut }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signIn,
+        register,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}; 
+export function useAuth(): AuthContextData {
+  return useContext(AuthContext);
+}
